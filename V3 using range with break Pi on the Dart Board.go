@@ -13,19 +13,27 @@ import (
 	"math"
 	"math/rand"
 	"os"
-	"runtime"
 	"time"
 )
 
+//Structure containing an x and y cordinate
 type dartCoords struct {
 	x, y float64
 }
 
+//Real value of pi
 const Pi = 3.14159
-const numDartBoards = 4
-const dartsToThrow = 10555555555
 
+//number of dartboards(threads)
+const numDartBoards = 4
+
+//Number of times the routine is carried out
+const dartsToThrow = 105555555
+
+//Stores the number of hits on the dart board
 var totalCount int
+
+//Stores the number of itterations carried
 var dartsThrown int
 
 var n int // used to dump byte counts from file IO
@@ -42,8 +50,7 @@ func checkFileOK(ecode error) { // type 'error' is known to Go
 //////////////////////////////////////////////////////////////////////////////////
 
 func main() {
-	rand.Seed(999)                                   // Seed the random number generator (constant seed makes a repeatable program)
-	fmt.Println("Max cores=", runtime.GOMAXPROCS(0)) // Set the max number of cores whilst seeing what it currently is.
+	rand.Seed(999) // Seed the random number generator (constant seed makes a repeatable program)
 
 	// Open a file to write results to.
 	PiResults, fError := os.OpenFile("PiResults.txt", os.O_APPEND|os.O_CREATE, 0666) // create file if not existing, and append to it. 666 = permission bits rw-/rw-/rw-
@@ -51,7 +58,7 @@ func main() {
 	defer PiResults.Close() // defer means do this last, just before surrounding block terminates (ie 'main')
 
 	// Set up required channels
-	workchan := make([]chan int, numDartBoards) // Create arrays of channels
+	workchan := make([]chan int, numDartBoards) // Create arrays of integer channels. As many channels as there are dartboards
 	hitResult := make([]chan int, numDartBoards)
 
 	for i := range workchan { // Now set them up.
@@ -59,12 +66,11 @@ func main() {
 		hitResult[i] = make(chan int)
 	}
 
-	// Now start the dart board workers in parallel.
-	fmt.Println("\nStart Dart Board processes...")
-
 	//******** BEGIN TIMING HERE ***************************************************
 	startTimer := time.Now()
+	//work is the amount of work that needs to be done by each dart board.
 	var work = dartsToThrow / (dartsToThrow / 1000)
+	// Dart board processors begin in parallel
 	for i := 0; i < numDartBoards; i++ {
 
 		go DartBoard(i, workchan[i], hitResult[i])
@@ -74,27 +80,27 @@ func main() {
 
 	for dartsThrown = 0; dartsThrown < dartsToThrow; {
 	myloop:
-		for i := range workchan { // Round robin check each dart board for a result (polling?)
+		for i := range workchan { //checks each dart board of a result
 			select {
 			// DART BOARD i - use a non-blocking check by using default: case
 			case count := <-hitResult[i]: // get 0 or 1 from dart board
-				//fmt.Println(dartsThrown)
-				workchan[i] <- work // immediately throw another dart its way
 
-				//dartsThrown++         // keep a tally of darts thrown
-				// (THIS WILL NOT BE EXACTLY = dartsToThrow = error? May be OK, more darts the merrier?)
-				if dartsThrown = dartsThrown + work; dartsThrown >= dartsToThrow { // SOLUTION: increment tally and check for limit
+				workchan[i] <- work // Send more work to the dartboard that has finished.
+				//IF darts thrown is equal to itsel and a set of work and is greater than or equal than the
+				//darts that needed to be thrown then break the loop
+				if dartsThrown = dartsThrown + work; dartsThrown >= dartsToThrow {
 					break myloop // and break out if exceeded
 
 				}
-
+				//at the count returned from the dartboard to the total count
 				totalCount += count
-			default: // if dart board not ready check next...
+
 			}
 		}
 	}
 
 	//******** END TIMING HERE ***************************************************
+	//total time taken to get result
 	elapsedTime := time.Since(startTimer)
 
 	fmt.Println("Total number of darts thrown =", dartsThrown)
@@ -122,27 +128,28 @@ func main() {
 //----------------------------------------------------------------------------------
 
 func DartBoard(id int, myWork <-chan int, hitOrMiss chan<- int) {
+	//Create new random object that is exclusive to this instance of the function
 	rn := rand.New(rand.NewSource(int64(id)))
 
-	//fmt.Println("Dart board", id, "ready!")
-	hitOrMiss <- 0 // kick off the process by sending a zero
-	hitcount := 0
+	hitOrMiss <- 0 // Trigger the sending of work by sending 0.
+	var hitcount int
 	for { // do forever
-		hitcount = 0
+		hitcount = 0      //initialise hit counter to 0
 		count := <-myWork //recieves the amount of work needed
 		for i := 0; i < count; i++ {
 
-			//fmt.Println("Dartboard", id, "SetOfWork")
+			//create new dart and set its co-ordinates
 			var dart dartCoords
 			dart.x = rn.Float64()
 			dart.y = rn.Float64()
+
+			//record whether hit or miss
 			hit := 1 - int(dart.x*dart.x+dart.y*dart.y)
-			//fmt.Println("hit or miss", hit)
+			//add it to the running total
 			hitcount = hitcount + hit
 		}
 
-		//time.Sleep(time.Duration(rand.Intn(1)) * time.Microsecond) // artificially slow down
-
+		//send the hit count back to the main function via channel
 		hitOrMiss <- hitcount
 
 	}
